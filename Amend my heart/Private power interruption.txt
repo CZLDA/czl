@@ -1,0 +1,644 @@
+cardreader.cpp目录下：
+1.    226 #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+void CardReader::openPowerOffFile(char* name, uint8_t oflag) {
+  if (!cardOK) return;
+  if (powerOffFile.isOpen()) return;
+  if (!powerOffFile.open(&root, name, oflag)) {
+    SERIAL_PROTOCOLPGM(MSG_SD_OPEN_FILE_FAIL);
+    SERIAL_PROTOCOL(name);
+    SERIAL_PROTOCOLPGM(".\n");
+  }
+  else {
+    SERIAL_PROTOCOLPGM(MSG_SD_WRITE_TO_FILE);
+    SERIAL_PROTOCOLLN(name);
+  }
+}
+
+void CardReader::closePowerOffFile() {
+  powerOffFile.close();
+}
+
+bool CardReader::existPowerOffFile(char* name) {
+  bool ret = powerOffFile.open(&root, name, O_READ);
+  // if (ret) 
+  // {
+  //   powerOffFile.close();
+  // }
+  return ret;
+}
+
+int16_t CardReader::savePowerOffInfo(const void* data, uint16_t size) {
+  powerOffFile.seekSet(0);
+  return powerOffFile.write(data, size);
+}
+
+int16_t CardReader::getPowerOffInfo(void* data, uint16_t size) {
+  return powerOffFile.read(data, size);
+}
+
+void CardReader::removePowerOffFile() {
+  if (powerOffFile.remove(&root, power_off_info.power_off_filename)) {
+    SERIAL_PROTOCOLPGM("File(bin) deleted");
+  }
+  else {
+    SERIAL_PROTOCOLPGM("Deletion(bin) failed");
+  }
+  SERIAL_PROTOCOLPGM(".\n");
+}
+#endif
+void CardReader::openLogFile(char* name)
+{ logging = true;
+  openFile(name, false);}开始段  中间直接加
+{void CardReader::getAbsFilename(char *t){}结束段
+2.   505/548    enqueuecommand(cmd);      ue
+      enqueuecommands_P(PSTR("M24"));  ue    s  需要加上的
+3.   651/607    #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+      openPowerOffFile(power_off_info.power_off_filename, O_CREAT | O_WRITE | O_TRUNC | O_SYNC);
+      power_off_info.valid_head = 0;
+      power_off_info.valid_foot = 0;
+      if (savePowerOffInfo(&power_off_info, sizeof(power_off_info)) == -1)
+	  {
+        SERIAL_PROTOCOLLN("Stop to Write power off file failed.");
+      }
+	  power_off_commands_count = 0;
+      closePowerOffFile();
+    #endif
+在{ if(SD_FINISHED_STEPPERRELEASE)}前面直接加   另外665句改为enqueuecommands_P(PSTR(SD_FINISHED_RELEASECOMMAND));
+二.  在cardreader.h目录下
+1.  23 #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+    void openPowerOffFile(char* name, uint8_t oflag);
+    void closePowerOffFile();
+    bool existPowerOffFile(char* name);
+    int16_t savePowerOffInfo(const void* data, uint16_t size);
+    int16_t getPowerOffInfo(void* data, uint16_t size);
+    void removePowerOffFile();
+  #endif
+在{void openLogFile(char* name);}后面直接加上
+2.55/46  FORCE_INLINE uint32_t getIndex() { return sdpos; }
+在{FORCE_INLINE void setIndex(long index) {sdpos = index;file.seekSet(index);};}后面直接加
+3. 74/64  #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+    SdFile powerOffFile;
+  #endif
+在{#define SD_PROCEDURE_DEPTH 1}前面直接加
+4.95/82      #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+struct power_off_info_t 
+{
+  /* header (1B + 7B = 8B) */
+  uint8_t valid_head;
+  // uint8_t reserved1[8-1];
+  /* Gcode related information. (44B + 20B = 64B) */
+  float current_position[NUM_AXIS];
+  float feedrate;
+  float saved_z;
+  int target_temperature[4];
+  int target_temperature_bed;
+  // uint8_t reserved2[64-44];
+  /* print queue related information. (396B + 116B = 512B) */
+  int cmd_queue_index_r;
+  int cmd_queue_index_w;
+  int commands_in_queue;
+  char command_queue[BUFSIZE][MAX_CMD_SIZE];
+  // uint8_t reserved3[512-396];
+  /* SD card related information. (165B + 91B = 256B)*/
+  uint32_t sdpos;
+  millis_t print_job_start_ms;
+  char sd_filename[MAXPATHNAMELENGTH];
+  char power_off_filename[16];
+  // uint8_t reserved4[256-166];
+  uint8_t valid_foot;
+};
+
+extern struct power_off_info_t power_off_info;
+extern int power_off_commands_count;
+extern int power_off_type_yes;
+#endif
+在{#define IS_SD_PRINTING (card.sdprinting)}前面直接加
+三.在Configuration.h目录
+1. 457#define POWEROFF_SAVE_SD_FILE需要取消注释
+四.在language.h目录下
+1.  146    	#define MSG_RESUME_PRINT_OK                 MSG_RESUME_PRINT "?"
+	#define MSG_RESUME_PRINT_Y                  "Yes"
+	#define MSG_RESUME_PRINT_N                  "No"
+在{// Serial Console Messages}前面直接加
+2.1671/1668     	#define MSG_RESUME_PRINT_OK                 MSG_RESUME_PRINT "?"
+	#define MSG_RESUME_PRINT_Y                  "Yes"
+	#define MSG_RESUME_PRINT_N                  "No"
+在{// Serial Console Messages}前面直接加
+五.在Marlin.h目录下
+1. 29  typedef unsigned long millis_t;  
+在{#if (ARDUINO >= 100)
+# include "Arduino.h"}前面直接加
+2.  189/187    bool enqueuecommand(const char* cmd);
+void enqueuecommands_P(const char* pgcode);
+在{void prepare_arc_move(char isclockwise);
+void clamp_to_software_endstops(float target[3]);}前面直接加
+3.  242/237     #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+void init_power_off_info();
+#endif
+在{// Handling multiple extruders pins
+extern uint8_t active_extruder; }后面直接加 
+六.在Marlin_main.cpp目录下
+1.300   #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+  #define SAVE_INFO_INTERVAL (1000 * 10)
+  #define APPEND_CMD_COUNT 5
+  //#define SAVE_EACH_CMD_MODE
+  struct power_off_info_t power_off_info;
+  static char power_off_commands[BUFSIZE + APPEND_CMD_COUNT][MAX_CMD_SIZE];
+  int power_off_commands_count = 0;
+  int power_off_type_yes = 0;
+  static int power_off_commands_index = 0;
+#endif
+在{bool CooldownNoWait = true;
+bool target_direction;}后面直接加
+2.346/335    // void enquecommand(const char *cmd)
+// {
+//   if(buflen < BUFSIZE)
+//   {
+//     //this is dangerous if a mixing of serial and this happsens
+//     strcpy(&(cmdbuffer[bufindw][0]),cmd);
+//     SERIAL_ECHO_START;
+//     SERIAL_ECHOPGM("enqueing \"");
+//     SERIAL_ECHO(cmdbuffer[bufindw]);
+//     SERIAL_ECHOLNPGM("\"");
+//     bufindw= (bufindw + 1)%BUFSIZE;
+//     buflen += 1;
+//   }
+// }
+
+// void enquecommand_P(const char *cmd)
+// {
+//   if(buflen < BUFSIZE)
+//   {
+//     //this is dangerous if a mixing of serial and this happsens
+//     strcpy_P(&(cmdbuffer[bufindw][0]),cmd);
+//     SERIAL_ECHO_START;
+//     SERIAL_ECHOPGM("enqueing \"");
+//     SERIAL_ECHO(cmdbuffer[bufindw]);
+//     SERIAL_ECHOLNPGM("\"");
+//     bufindw= (bufindw + 1)%BUFSIZE;
+//     buflen += 1;
+//   }
+// }
+/**
+ * Inject the next command from the command queue, when possible
+ * Return false only if no command was pending
+ */
+static bool drain_queued_commands_P()
+{
+  if (!queued_commands_P) return false;
+
+  // Get the next 30 chars from the sequence of gcodes to run
+  char cmd[30];
+  strncpy_P(cmd, queued_commands_P, sizeof(cmd) - 1);
+  cmd[sizeof(cmd) - 1] = '\0';
+
+  // Look for the end of line, or the end of sequence
+  size_t i = 0;
+  char c;
+  while ((c = cmd[i]) && c != '\n') i++; // find the end of this gcode command
+  cmd[i] = '\0';
+  if (enqueuecommand(cmd)) {      // buffer was not full (else we will retry later)
+    if (c)
+      queued_commands_P += i + 1; // move to next command
+    else
+      queued_commands_P = NULL;   // will have no more commands in the sequence
+  }
+  return true;
+}
+
+/**
+ * Record one or many commands to run from program memory.
+ * Aborts the current queue, if any.
+ * Note: drain_queued_commands_P() must be called repeatedly to drain the commands afterwards
+ */
+void enqueuecommands_P(const char* pgcode) 
+{
+  queued_commands_P = pgcode;
+  drain_queued_commands_P(); // first command executed asap (when possible)
+}
+
+/**
+ * Copy a command directly into the main command buffer, from RAM.
+ *
+ * This is done in a non-safe way and needs a rework someday.
+ * Returns false if it doesn't add any command
+ */
+bool enqueuecommand(const char* cmd) 
+{
+  if (*cmd == ';' || buflen >= BUFSIZE) return false;
+
+  // This is dangerous if a mixing of serial and this happens
+  char* command = cmdbuffer[bufindw];
+  strcpy(command, cmd);
+  SERIAL_ECHO_START;
+  SERIAL_ECHOPGM("enqueing \"");
+  SERIAL_ECHO(command);
+  SERIAL_ECHOLNPGM("\"");
+  bufindw = (bufindw + 1) % BUFSIZE;
+  buflen++;
+  return true;}
+在{    free_memory = ((int)&free_memory) - ((int)__brkval);
+return free_memory;   }  }  //adds an command to the main command buffer
+/ /thats really done in a non-safe way.
+//needs overworking someday}后面直接加，内容里面有部分要把原有的文件注释掉
+3. 508/437      #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+void init_power_off_info () {
+	int i = 0;
+	memset(&power_off_info, 0, sizeof(power_off_info));
+	memset(power_off_commands, 0, sizeof(power_off_commands));
+	if (!card.cardOK){
+		card.initsd();
+	}
+	if (card.cardOK) {
+		SERIAL_PROTOCOLLN("Init power off infomation.");
+		SERIAL_PROTOCOLLN("size: ");
+		SERIAL_PROTOCOLLN(sizeof(power_off_info));
+		strncpy_P(power_off_info.power_off_filename, PSTR("bin"), sizeof(power_off_info.power_off_filename) - 1);
+		if (card.existPowerOffFile(power_off_info.power_off_filename)) {
+			card.openPowerOffFile(power_off_info.power_off_filename, O_READ);
+			card.getPowerOffInfo(&power_off_info, sizeof(power_off_info));
+			card.closePowerOffFile();
+//			card.removePowerOffFile();
+			SERIAL_PROTOCOLLN("init valid: ");
+			SERIAL_PROTOCOLLN((unsigned long)power_off_info.valid_head);
+      SERIAL_PROTOCOLLN((unsigned long)power_off_info.valid_foot);
+      if ((power_off_info.valid_head != 0) && (power_off_info.valid_head == power_off_info.valid_foot)) {
+        enable_z(); 
+  			/* --------------------------------------------------------------------- */
+  			SERIAL_PROTOCOLLN("current_position(X,Y,Z,E,F,T1..T4,B): ");
+  			for (i = 0; i < NUM_AXIS; i++) {
+  				//current_position[i] = power_off_info.current_position[i];
+  				SERIAL_PROTOCOLLN(power_off_info.current_position[i]);
+  			}
+  			//feedrate = power_off_info.feedrate;
+  			SERIAL_PROTOCOLLN(power_off_info.feedrate);
+  			for (i = 0; i < 4; i++) {
+  				//target_temperature[i] = power_off_info.target_temperature[i];
+  				SERIAL_PROTOCOLLN(power_off_info.target_temperature[i]);
+  			}
+  			SERIAL_PROTOCOLLN(power_off_info.target_temperature_bed);
+  			/* --------------------------------------------------------------------- */
+  			SERIAL_PROTOCOLLN("cmd_queue(R,W,C,Q): ");
+  			//cmd_queue_index_r = power_off_info.cmd_queue_index_r;
+  			SERIAL_PROTOCOLLN(power_off_info.cmd_queue_index_r);
+  			//cmd_queue_index_w = power_off_info.cmd_queue_index_w;
+  			SERIAL_PROTOCOLLN(power_off_info.cmd_queue_index_w);
+  			//commands_in_queue = power_off_info.commands_in_queue;
+  			SERIAL_PROTOCOLLN(power_off_info.commands_in_queue);
+  			//memcpy(command_queue, power_off_info.command_queue, sizeof(command_queue));
+  			for (i = 0; i < BUFSIZE; i++) {
+  				SERIAL_PROTOCOLLN(power_off_info.command_queue[i]);
+  			}
+		char str_X[16];
+        char str_Y[16];
+        char str_Z[16];
+        char str_E[16];
+        char str_Z_up[16];
+		memset(str_Z, 0, sizeof(str_X));
+        memset(str_Z, 0, sizeof(str_Y));
+        memset(str_Z, 0, sizeof(str_Z));
+        memset(str_E, 0, sizeof(str_E));
+        memset(str_Z_up, 0, sizeof(str_Z_up));
+		dtostrf(power_off_info.current_position[0], 1, 3, str_X);
+        dtostrf(power_off_info.current_position[1], 1, 3, str_Y);
+        dtostrf(power_off_info.current_position[2], 1, 3, str_Z);
+        dtostrf(power_off_info.current_position[2] + 5, 1, 3, str_Z_up);
+        #if defined(SAVE_EACH_CMD_MODE)
+        dtostrf(power_off_info.current_position[3] - 5, 1, 3, str_E);
+        #else
+        dtostrf(power_off_info.current_position[3], 1, 3, str_E);
+        #endif
+  			//sprintf_P(power_off_commands[0], PSTR("G0 Z%s"), tmp);
+        sprintf_P(power_off_commands[0], PSTR("G92 Z%s E%s"), str_Z, str_E);
+        sprintf_P(power_off_commands[1], PSTR("G0 Z%s"), str_Z_up);
+        sprintf_P(power_off_commands[2], PSTR("G28 X0 Y0"));
+        sprintf_P(power_off_commands[3], PSTR("G0 Z%s"), str_Z);
+        sprintf_P(power_off_commands[4], PSTR("M117 Printing..."));
+  			power_off_commands_count = APPEND_CMD_COUNT;
+  			i = APPEND_CMD_COUNT;
+  			while (power_off_info.commands_in_queue > 0) {
+  				strcpy(power_off_commands[i++], power_off_info.command_queue[power_off_info.cmd_queue_index_r]);
+  				power_off_commands_count++;
+  				power_off_info.commands_in_queue--;
+  				power_off_info.cmd_queue_index_r = (power_off_info.cmd_queue_index_r + 1) % BUFSIZE;
+  			}
+  			for (i = 0; i < power_off_commands_count; i++) {
+  				SERIAL_PROTOCOLLN(power_off_commands[i]);
+  			}
+  			/* --------------------------------------------------------------------- */
+  			SERIAL_PROTOCOLLN("sd file(start_time,file_name,sd_pos): ");
+  			SERIAL_PROTOCOLLN(power_off_info.print_job_start_ms);
+  			SERIAL_PROTOCOLLN(power_off_info.sd_filename);
+  			SERIAL_PROTOCOLLN(power_off_info.sdpos);
+  			starttime = power_off_info.print_job_start_ms;
+    		card.openFile(power_off_info.sd_filename, true);
+    		card.setIndex(power_off_info.sdpos);
+  			/* --------------------------------------------------------------------- */
+      }
+      else {
+        if ((power_off_info.valid_head != 0) && (power_off_info.valid_head != power_off_info.valid_foot)) {
+          enqueuecommands_P(PSTR("M117 INVALID DATA."));
+        }
+        memset(&power_off_info, 0, sizeof(power_off_info));
+        strncpy_P(power_off_info.power_off_filename, PSTR("bin"), sizeof(power_off_info.power_off_filename) - 1);
+      }
+		}
+	}
+}
+
+bool drain_power_off_commands () {
+	if (power_off_commands_count > 0) {
+		if(enqueuecommand(power_off_commands[power_off_commands_index])) {
+			power_off_commands_index++;
+			power_off_commands_count--;
+		}
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
+void save_power_off_info () {
+	int i = 0;
+  //static millis_t pre_time = millis();
+  //static millis_t cur_time = millis();
+	if (card.cardOK && card.sdprinting) {
+    //cur_time = millis();
+		if (
+      #ifdef SAVE_EACH_CMD_MODE
+      (true)
+      #else
+      ((current_position[2] > 0) && (power_off_info.saved_z != current_position[2]))
+      #endif 
+        //|| ((cur_time - pre_time) > SAVE_INFO_INTERVAL)
+      ) {
+      //pre_time = cur_time;
+      //SERIAL_PROTOCOLLN("Z : ");
+      //SERIAL_PROTOCOLLN(current_position[2]);
+      //SERIAL_PROTOCOLLN(power_off_info.saved_z);
+      power_off_info.valid_head = random(1,256);
+      power_off_info.valid_foot = power_off_info.valid_head;
+			//SERIAL_PROTOCOLLN("save valid: ");
+			//SERIAL_PROTOCOLLN((unsigned long)power_off_info.valid_head);
+      //SERIAL_PROTOCOLLN((unsigned long)power_off_info.valid_foot);
+			/* --------------------------------------------------------------------- */
+			//SERIAL_PROTOCOLLN("current_position(X,Y,Z,SZ,E,F,T1..T4,B): ");
+			for (i = 0; i < NUM_AXIS; i++) {
+				power_off_info.current_position[i] = current_position[i];
+				//SERIAL_PROTOCOLLN(current_position[i]);
+			}
+			power_off_info.saved_z = current_position[2];
+			//SERIAL_PROTOCOLLN(power_off_info.saved_z);
+			power_off_info.feedrate = feedrate;
+			//SERIAL_PROTOCOLLN(power_off_info.feedrate);
+			for (i = 0; i < 4; i++) {
+				power_off_info.target_temperature[i] = target_temperature[i];
+				//SERIAL_PROTOCOLLN(target_temperature[i]);
+			}
+			power_off_info.target_temperature_bed = target_temperature_bed;
+			//SERIAL_PROTOCOLLN(power_off_info.target_temperature_bed);
+			/* --------------------------------------------------------------------- */
+			//SERIAL_PROTOCOLLN("cmd_queue(R,W,C,Q): ");
+			power_off_info.cmd_queue_index_r = bufindr;
+			//SERIAL_PROTOCOLLN(power_off_info.cmd_queue_index_r);
+			power_off_info.cmd_queue_index_w = bufindw;
+			//SERIAL_PROTOCOLLN(power_off_info.cmd_queue_index_w);
+			power_off_info.commands_in_queue = buflen;
+			//SERIAL_PROTOCOLLN(power_off_info.commands_in_queue);
+			memcpy(power_off_info.command_queue, cmdbuffer, sizeof(power_off_info.command_queue));
+			//for (i = 0; i < BUFSIZE; i++) {
+			//	SERIAL_PROTOCOLLN(power_off_info.command_queue[i]);
+			//}
+			/* --------------------------------------------------------------------- */
+			//SERIAL_PROTOCOLLN("sd file(start_time,file_name,sd_pos): ");
+      power_off_info.print_job_start_ms = starttime;
+      //SERIAL_PROTOCOLLN(power_off_info.print_job_start_ms);
+      //strcpy(power_off_info.sd_filename, 
+      card.getAbsFilename(power_off_info.sd_filename);
+      //SERIAL_PROTOCOLLN(power_off_info.sd_filename);
+			power_off_info.sdpos = card.getIndex();
+			//SERIAL_PROTOCOLLN(power_off_info.sdpos);
+			/* --------------------------------------------------------------------- */
+			card.openPowerOffFile(power_off_info.power_off_filename, O_CREAT | O_WRITE | O_TRUNC | O_SYNC);
+			if (card.savePowerOffInfo(&power_off_info, sizeof(power_off_info)) == -1){
+				SERIAL_PROTOCOLLN("Write power off file failed.");
+            }           }          }    }   #endif  
+在【 #if defined (ENABLE_AUTO_BED_LEVELING) && (PROBE_SERVO_DEACTIVATION_DELAY > 0)
+  delay(PROBE_SERVO_DEACTIVATION_DELAY);
+  servos[servo_endstops[Z_AXIS]].detach();
+  #endif   }】后面直接加
+4. 758/498     #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+   init_power_off_info();
+  #endif
+在{ #ifdef DIGIPOT_I2C
+    digipot_i2c_init();
+  #endif}后面直接加
+5.797/534        #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+        save_power_off_info();
+        #endif
+在{card.closefile();
+          SERIAL_PROTOCOLLNPGM(MSG_FILE_SAVED);
+        }      }    else   {  process_commands();}后面直接加
+6.816/550   if (drain_queued_commands_P()) return; // priority is given to non-serial commands
+在{while( MYSERIAL.available() > 0  && buflen < BUFSIZE) {
+    serial_char = MYSERIAL.read();}前面直接加
+7.926/660    #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+  if (drain_power_off_commands()) return;
+  #endif   
+在{ #ifdef SDSUPPORT
+  if(!card.sdprinting || serial_count!=0){
+    return;     }   }   后面直接加 
+8.1848/1577     {      if (i == Z_AXIS) 
+	 {          axis_known_position[Z_AXIS] = true;         }
+在{ current_position[i] = code_value()+add_homeing[i];
+             plan_set_position(current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS], current_position[E_AXIS]);}前面直接加
+9.1914/1639      #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+      init_power_off_info();
+      #endif
+在{case 21: // M21 - init SD card
+ card.initsd();}后面直接加
+10. 1929/1651    #ifdef SDSUPPORT
+        #ifdef POWEROFF_SAVE_SD_FILE
+        card.removePowerOffFile();
+        #endif
+      #endif
+在{card.openFile(strchr_pointer + 4,true);
+      break;
+    case 24: //M24 - Start SD print}后面直接加
+六.motion_control.h目录下存在问题需要检查
+七.ultralcd.cpp目录下
+1.51/50   static void lcd_resume_ok_menu();
+在{extern bool powersupply;
+static void lcd_main_menu();}后面直接加
+2.243/242     static void lcd_sdcard_pause()
+{
+    card.pauseSDPrint();
+    enqueuecommands_P((PSTR("G28 X0 Y0")));           // ue   s     修改只用加此
+	// disable_x();
+	// disable_y();
+}
+static void lcd_sdcard_resume()
+{
+    char cmd1[30];
+    #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+  	//enable_z();
+  	if (power_off_commands_count > 0)
+	{
+  		sprintf_P(cmd1, PSTR("M190 S%i"), power_off_info.target_temperature_bed);
+  		enqueuecommand(cmd1);
+  		sprintf_P(cmd1, PSTR("M109 S%i"), power_off_info.target_temperature[0]);
+  		enqueuecommand(cmd1);
+        enqueuecommands_P(PSTR("M106 S255"));
+		power_off_type_yes = 1;
+  	}
+  	else 
+	{
+      enqueuecommands_P((PSTR("G28 X0 Y0")));
+  	}
+    #else
+    enqueuecommands_P((PSTR("G28 X0 Y0")));
+    #endif
+	card.startFileprint();               //此处不动
+}
+
+static void lcd_sdcard_stop()                  // 此处不动
+{
+    card.sdprinting = false;                     //  此处不动
+    card.closefile();                                  // 此处不动
+    #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+    card.openPowerOffFile(power_off_info.power_off_filename, O_CREAT | O_WRITE | O_TRUNC | O_SYNC);
+    power_off_info.valid_head = 0;
+    power_off_info.valid_foot = 0;
+    if (card.savePowerOffInfo(&power_off_info, sizeof(power_off_info)) == -1)
+	{
+      SERIAL_PROTOCOLLN("Stop to Write power off file failed.");
+    }
+    card.closePowerOffFile();
+	power_off_commands_count = 0;
+    #endif
+    quickStop();                                         // 此处不动
+    if(SD_FINISHED_STEPPERRELEASE)        //此处不动
+    {
+        enqueuecommands_P(PSTR(SD_FINISHED_RELEASECOMMAND));          // ue   s  需要修改的
+    }
+    autotempShutdown();                          // 此处不动
+}
+  
+static void lcd_sdcard_resume_return()
+{
+  lcd_sdcard_resume();
+  lcd_return_to_status();
+}
+
+static void lcd_sdcard_stop_return() 
+{
+  lcd_sdcard_stop();
+  lcd_return_to_status();
+}
+
+static void msg_resume_print_ok_title() 
+{
+  return;
+}
+
+/**
+ *
+ * "Resume yes or no" menu
+ *
+ */
+#if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+static void lcd_resume_ok_menu() 
+{
+  START_MENU();
+  MENU_ITEM(function, MSG_RESUME_PRINT_OK, msg_resume_print_ok_title);
+  MENU_ITEM(function, MSG_RESUME_PRINT_Y, lcd_sdcard_resume_return);
+  MENU_ITEM(function, MSG_RESUME_PRINT_N, lcd_sdcard_stop_return);
+  END_MENU();
+}
+#endif
+
+/* Menu implementation */
+static void lcd_main_menu()                                                                    //此处不动
+{
+    START_MENU();                                                                                      //此处不动
+    MENU_ITEM(back, MSG_WATCH, lcd_status_screen);                              //此处不动
+    if (movesplanned() || IS_SD_PRINTING)                                                     //此处不动
+    {
+        MENU_ITEM(submenu, MSG_TUNE, lcd_tune_menu);                           //此处不动
+    }else{
+        MENU_ITEM(submenu, MSG_PREPARE, lcd_prepare_menu);                //此处不动
+       // u8g.setFont(u8g_font_6x10_marlin);                                                 
+    }
+    MENU_ITEM(submenu, MSG_CONTROL, lcd_control_menu);                  //此处不动
+#ifdef SDSUPPORT
+    if (card.cardOK)                                                                                    //此处不动
+    {
+        if (card.isFileOpen())                                                                         //此处不动
+        {
+			#if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+        		if (power_off_commands_count > 0) 
+				{
+          			;//MENU_ITEM(submenu, msg_resume_print_ok(), lcd_resume_ok_menu);
+        		}
+        		else
+				{
+        	#endif
+            if (card.sdprinting)                                                                                    // 此处不动
+                MENU_ITEM(function, MSG_PAUSE_PRINT, lcd_sdcard_pause);              //此处不动
+            else
+                MENU_ITEM(function, MSG_RESUME_PRINT, lcd_sdcard_resume);          //此处不动
+            MENU_ITEM(function, MSG_STOP_PRINT, lcd_sdcard_stop);                        //此处不动
+			#if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)  
+        		}
+        	#endif
+在{#ifdef ULTIPANEL
+static void lcd_return_to_status()
+{     encoderPosition = 0;
+    currentMenu = lcd_status_screen;    }     }后面直接加{
+}else{   MENU_ITEM(submenu, MSG_CARD_MENU, lcd_sdcard_menu);} 结束句  不动的位置行后面标记3.
+3.700/624    /*
+#ifdef DOGLCD && !defined(MINIPANEL)
+#if !defined(MINIPANEL)
+    // MENU_ITEM_EDIT(int3, MSG_CONTRAST, &lcd_contrast, 0, 63);
+    MENU_ITEM(submenu, MSG_CONTRAST, lcd_set_contrast);
+#endif
+#endif
+#ifdef FWRETRACT
+    MENU_ITEM(submenu, MSG_RETRACT, lcd_control_retract_menu);
+#endif     */  
+在{#ifdef EEPROM_SETTINGS
+    MENU_ITEM(function, MSG_STORE_EPROM, Config_StoreSettings);
+    MENU_ITEM(function, MSG_LOAD_EPROM, Config_RetrieveSettings);}  前面的句里面需要取消掉
+4. 740/662      /*
+#ifdef AUTOTEMP
+    MENU_ITEM_EDIT(bool, MSG_AUTOTEMP, &autotemp_enabled);
+    MENU_ITEM_EDIT(float3, MSG_MIN, &autotemp_min, 0, HEATER_0_MAXTEMP - 15);
+    MENU_ITEM_EDIT(float3, MSG_MAX, &autotemp_max, 0, HEATER_0_MAXTEMP - 15);
+    MENU_ITEM_EDIT(float32, MSG_FACTOR, &autotemp_factor, 0.0, 1.0);
+#endif
+#ifdef PIDTEMP
+    MENU_ITEM_EDIT(float52, MSG_PID_P, &Kp, 1, 9990);
+    // i is typically a small value so allows values below 1
+    MENU_ITEM_EDIT_CALLBACK(float52, MSG_PID_I, &raw_Ki, 0.01, 9990, copy_and_scalePID_i);
+    MENU_ITEM_EDIT_CALLBACK(float52, MSG_PID_D, &raw_Kd, 1, 9990, copy_and_scalePID_d);
+# ifdef PID_ADD_EXTRUSION_RATE
+    MENU_ITEM_EDIT(float3, MSG_PID_C, &Kc, 1, 9990);
+# endif//PID_ADD_EXTRUSION_RATE
+#endif//PIDTEMP
+    MENU_ITEM(submenu, MSG_PREHEAT_PLA_SETTINGS, lcd_control_temperature_preheat_pla_settings_menu);
+    MENU_ITEM(submenu, MSG_PREHEAT_ABS_SETTINGS, lcd_control_temperature_preheat_abs_settings_menu);
+*/ 
+在 {#endif
+    MENU_ITEM_EDIT(int3, MSG_FAN_SPEED, &fanSpeed, 0, 255);}   后面的句需要注释掉  
+5.1019/939       enqueuecommands_P((PSTR("G28"))); // move all axis home      //ue  s需要修改
+   1045/965       enqueuecommands_P(pgcode);            //ue   s  需要修改
+   1058/978       enqueuecommand(cmd);                      //ue
+                        enqueuecommands_P(PSTR("M24"));     //ue  s
+6.1136/1055     #if defined(SDSUPPORT) && defined(POWEROFF_SAVE_SD_FILE)
+      if ((power_off_type_yes == 0) && (power_off_commands_count > 0)) 
+	  {
+        currentMenu = lcd_resume_ok_menu;
+      }	#endif    
+在{ #if (SDCARDDETECT > 0)
+    if((IS_SD_INSERTED != lcd_oldcardstatus))}前面直接加
